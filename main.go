@@ -7,21 +7,22 @@ import (
 	_ "github.com/ziutek/mymysql/godrv"
 	"log"
 	"os"
-	"strings"
+	"time"
 )
 
 const (
-	VERSION = "0.9.0"
+	VERSION = "0.9.1"
 )
 
 var appLog = log.New(os.Stdout, "", log.LstdFlags)
 
 var cliFlags struct {
-	Help bool   `short:"?" long:"help" description:"Shows this help."`
-	Host string `short:"h" long:"host" description:"MySQL host to connect."`
-	Port uint16 `short:"P" long:"port" description:"MySQL port to connect."`
-	User string `short:"u" long:"user" description:"MySQL user to use."`
-	Pass string `short:"p" long:"password" description:"MySQL password to use."`
+	Help        bool   `short:"?" long:"help" description:"Shows this help."`
+	Host        string `short:"h" long:"host" description:"MySQL host to connect."`
+	Port        uint16 `short:"P" long:"port" description:"MySQL port to connect."`
+	User        string `short:"u" long:"user" description:"MySQL user to use."`
+	Pass        string `short:"p" long:"password" description:"MySQL password to use."`
+	HaltOnError bool   `short:"e" long:"halt-on-error" description:"Whether to halt on error or not (Transaction is used)."`
 }
 
 type DatabaseColumn struct {
@@ -110,32 +111,52 @@ func main() {
 	appLog.Printf("Found %d columns in %d tables.\n", len(columns), len(columnsByTable))
 	appLog.Printf("Will convert from %s to %s.\n", fromTZ, toTZ)
 
+	transaction, err := db.Begin()
+	defer db.Close()
+
+	if err != nil {
+		appLog.Fatalf("Failed to start the transaction. (%s)\n", err)
+		os.Exit(1)
+	}
+
+	startTime := time.Now()
+
 	for tableName, columns := range columnsByTable {
-		columnNames := make([]string, 0)
-		columnUpdates := make([]string, 0)
-
 		for _, column := range columns {
-			columnNames = append(columnNames, column.Name)
-			columnUpdates = append(
-				columnUpdates,
-				fmt.Sprintf("%s = CONVERT_TZ(%s, '%s', '%s')", column.Name, column.Name, fromTZ, toTZ),
+			appLog.Println("---")
+			appLog.Printf("Processing %s.%s ...\n", tableName, column.Name)
+
+			sql = fmt.Sprintf(
+				"UPDATE %s.%s SET %s = CONVERT_TZ(%s, ?, ?) WHERE %s IS NOT NULL",
+				database, tableName,
+				column.Name,
+				column.Name,
+				column.Name,
 			)
-		}
 
-		appLog.Println("---")
-		appLog.Printf("Table:  %s\n", tableName)
-		appLog.Printf("Fields: %s\n", strings.Join(columnNames, ", "))
+			updateResult, updateErr := db.Exec(sql, fromTZ, toTZ)
+			if updateErr == nil {
+				numRowsUpdated, _ := updateResult.RowsAffected()
+				appLog.Printf("DONE. (%d rows)\n", numRowsUpdated)
+			} else {
+				appLog.Printf("FAILED. (%s)\n", updateErr)
 
-		sql = fmt.Sprintf("UPDATE %s.%s SET %s", database, tableName, strings.Join(columnUpdates, ", "))
-
-		updateResult, updateErr := db.Exec(sql)
-		if updateErr == nil {
-			numRowsUpdated, _ := updateResult.RowsAffected()
-			appLog.Printf("DONE. (%d rows)\n", numRowsUpdated)
-		} else {
-			appLog.Printf("FAILED. (%s)\n", updateErr)
+				if cliFlags.HaltOnError {
+					appLog.Println("---")
+					appLog.Fatalln("Aborted.")
+					os.Exit(1)
+				}
+			}
 		}
 	}
 
 	appLog.Println("---")
+
+	err = transaction.Commit()
+	if err != nil {
+		appLog.Fatalf("Failed to commit the transaction. (%s)\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Finished after %s.\n", time.Since(startTime))
 }
