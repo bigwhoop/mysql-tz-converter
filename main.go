@@ -35,7 +35,7 @@ func main() {
 	cliFlags.Host = "127.0.0.1"
 	cliFlags.Port = 3306
 	
-	fmt.Printf("mysql_tz_converter v%s.\n", VERSION)
+	fmt.Printf("mysql-tz-converter v%s.\n", VERSION)
 	fmt.Println("Copyright (c) 2013 Philippe Gerber <philippe@bigwhoop.ch>")
 	fmt.Println()
 
