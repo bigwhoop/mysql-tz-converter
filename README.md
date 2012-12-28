@@ -5,8 +5,8 @@ one timezone to another.
  
 ## Installation
 
-    $ go install github.org/bigwhoop/mysql-tz-converter
+    go install github.org/bigwhoop/mysql-tz-converter
 
 ## Instructions
 
-    $ mysql-tz-converter --help
+    mysql-tz-converter --help
